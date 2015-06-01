@@ -24,6 +24,4 @@ func main() {
 <hr>
 <small>
 <strong>OpenWonk &copy; 2015 [MIT License](https://github.com/openwonk/mit_license)</strong>
-</small># Info
-# Info
-# Info
+</small>
