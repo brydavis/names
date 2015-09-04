@@ -5,6 +5,7 @@ package main
 import (
 	"database/sql"
 	"encoding/csv"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -16,6 +17,8 @@ import (
 import _ "github.com/go-sql-driver/mysql"
 
 const connStr = ""
+
+var query string
 
 type NameSet struct {
 	Name,
@@ -29,6 +32,7 @@ type NameSet struct {
 type Criteria struct {
 	Name,
 	Gender string
+	Exact bool
 }
 
 func Upload(folder string) { // (data NameDict, err error) {
@@ -92,15 +96,18 @@ func Upload(folder string) { // (data NameDict, err error) {
 	tx.Commit()
 }
 
-func Search(name string) {
+func Search(crit Criteria) {
 	db, err := sql.Open("mysql", connStr)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer db.Close()
 
-	query := fmt.Sprintf("select nm, yr, cnt, gndr from `names` where nm like '%%%s%%'", name)
-	fmt.Println(query)
+	if crit.Exact {
+		query = fmt.Sprintf("select distinct nm, yr, cnt, gndr from `names` where nm = '%s' and gndr like '%%%s%%'", crit.Name, crit.Gender)
+	} else {
+		query = fmt.Sprintf("select distinct nm, yr, cnt, gndr from `names` where nm like '%%%s%%' and gndr like '%%%s%%'", crit.Name, crit.Gender)
+	}
 
 	rows, err := db.Query(query)
 
@@ -127,7 +134,7 @@ func Search(name string) {
 	}
 }
 
-func High(crit Criteria) (top NameSet) {
+func High(crit Criteria) (results []NameSet) {
 
 	db, err := sql.Open("mysql", connStr)
 	if err != nil {
@@ -135,8 +142,11 @@ func High(crit Criteria) (top NameSet) {
 	}
 	defer db.Close()
 
-	query := fmt.Sprintf("select nm, yr, cnt, gndr from `names` where nm like '%%%s%%' and gndr like '%%%s%%'", crit.Name, crit.Gender)
-	fmt.Println(query)
+	if crit.Exact {
+		query = fmt.Sprintf("select distinct nm, yr, cnt, gndr from `names` where nm = '%s' and gndr like '%%%s%%'", crit.Name, crit.Gender)
+	} else {
+		query = fmt.Sprintf("select distinct nm, yr, cnt, gndr from `names` where nm like '%%%s%%' and gndr like '%%%s%%'", crit.Name, crit.Gender)
+	}
 
 	rows, err := db.Query(query)
 
@@ -146,17 +156,17 @@ func High(crit Criteria) (top NameSet) {
 
 	defer rows.Close()
 
-	var results []NameSet
+	var output []NameSet
 
 	for rows.Next() {
 		var nset NameSet
 
 		rows.Scan(&nset.Name, &nset.Year, &nset.Count, &nset.Gender)
-		results = append(results, nset)
+		output = append(output, nset)
 
 	}
 
-	// for _, v := range results {
+	// for _, v := range output {
 	// 	// if v.Name == name {
 	// 	fmt.Printf("name: %s, gender: %s, count: %d, year: %d\n", v.Name, v.Gender, v.Count, v.Year)
 	// 	// }
@@ -167,7 +177,10 @@ func High(crit Criteria) (top NameSet) {
 	// name := crit.Name
 	// gender := crit.Gender
 
-	for _, v := range results {
+	mnames := make(map[string]NameSet)
+
+	for _, nset := range output {
+
 		// if v.Name == name {
 		// fmt.Printf("name: %s, gender: %s, count: %s, year: %s\n", v.Name, v.Gender, v.Count, v.Year)
 		// switch {
@@ -179,12 +192,17 @@ func High(crit Criteria) (top NameSet) {
 		// 	male.Year = v.Year
 		// }
 
-		if v.Count > top.Count {
-			top.Name = v.Name
-			top.Gender = v.Gender
-			top.Count = v.Count
-			top.Year = v.Year
+		m, exists := mnames[nset.Name]
+
+		if exists {
+			if nset.Count > m.Count {
+				mnames[nset.Name] = nset
+			}
+		} else {
+
+			mnames[nset.Name] = nset
 		}
+
 		// case v.Gender == "F" && gender == "F":
 		// 	if v.Count > female.Count {
 		// 		female.Name = v.Name
@@ -198,7 +216,108 @@ func High(crit Criteria) (top NameSet) {
 	}
 
 	// 	return []NameSet{male, female}
-	return
+
+	for _, nset := range mnames {
+		results = append(results, nset)
+	}
+
+	j, _ := json.Marshal(results)
+	fmt.Printf("%v\n\n", string(j))
+
+	return results
+}
+
+func Low(crit Criteria) (results []NameSet) {
+
+	db, err := sql.Open("mysql", connStr)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	if crit.Exact {
+		query = fmt.Sprintf("select distinct nm, yr, cnt, gndr from `names` where nm = '%s' and gndr like '%%%s%%'", crit.Name, crit.Gender)
+	} else {
+		query = fmt.Sprintf("select distinct nm, yr, cnt, gndr from `names` where nm like '%%%s%%' and gndr like '%%%s%%'", crit.Name, crit.Gender)
+	}
+
+	rows, err := db.Query(query)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer rows.Close()
+
+	var output []NameSet
+
+	for rows.Next() {
+		var nset NameSet
+
+		rows.Scan(&nset.Name, &nset.Year, &nset.Count, &nset.Gender)
+		output = append(output, nset)
+
+	}
+
+	// for _, v := range output {
+	// 	// if v.Name == name {
+	// 	fmt.Printf("name: %s, gender: %s, count: %d, year: %d\n", v.Name, v.Gender, v.Count, v.Year)
+	// 	// }
+	// }
+
+	// var male NameSet
+	// var female NameSet
+	// name := crit.Name
+	// gender := crit.Gender
+
+	mnames := make(map[string]NameSet)
+
+	for _, nset := range output {
+
+		// if v.Name == name {
+		// fmt.Printf("name: %s, gender: %s, count: %s, year: %s\n", v.Name, v.Gender, v.Count, v.Year)
+		// switch {
+		// case v.Gender == "M" && gender == "M":
+		// if v.Count > male.Count {
+		// 	male.Name = v.Name
+		// 	male.Gender = v.Gender
+		// 	male.Count = v.Count
+		// 	male.Year = v.Year
+		// }
+
+		m, exists := mnames[nset.Name]
+
+		if exists {
+			if nset.Count < m.Count {
+				mnames[nset.Name] = nset
+			}
+		} else {
+
+			mnames[nset.Name] = nset
+		}
+
+		// case v.Gender == "F" && gender == "F":
+		// 	if v.Count > female.Count {
+		// 		female.Name = v.Name
+		// 		female.Gender = v.Gender
+		// 		female.Count = v.Count
+		// 		female.Year = v.Year
+		// 	}
+		// }
+
+		// }
+	}
+
+	// 	return []NameSet{male, female}
+
+	for _, nset := range mnames {
+		results = append(results, nset)
+	}
+
+	j, _ := json.Marshal(results)
+	fmt.Printf("%v\n\n", string(j))
+
+	return results
 }
 
 // func (dataset NameDict) Low(crit Criteria) []NameSet {
@@ -252,15 +371,16 @@ func main() {
 
 	n := flag.String("name", "Ruby", "Enter search name (e.g. \"John\")")
 	g := flag.String("gender", "F", "Enter search gender (F)emale or (M)ale")
+	b := flag.Bool("exact", false, "")
 
 	flag.Parse()
 
-	crit := Criteria{*n, *g}
+	crit := Criteria{*n, *g, *b}
 
 	high := High(crit)
-	// low := Low(crit)
+	low := Low(crit)
 
 	fmt.Println(high)
-	// fmt.Println(low)
+	fmt.Println(low)
 
 }
